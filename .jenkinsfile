@@ -1,0 +1,158 @@
+pipeline
+{
+
+    agent any
+    tools
+    {
+        maven 'DEFAULT'
+        jdk 'DEFAULT'
+    }
+
+
+    stages
+    {
+
+        stage('Build')
+        {
+            steps
+			    {
+				    echo "Build is Started"
+				    slackSend channel: 'eng-notifications',
+                    color: 'good',
+                    message: "PipeLine Run Started || * ${currentBuild.displayName}: * Job Name: ${env.JOB_NAME} || Build Number: ${env.BUILD_NUMBER}\n More information at: ${env.BUILD_URL} " ,
+                    teamDomain: 'automatad', tokenCredentialId: 'Slackjenkins'
+				    sh "mvn clean"
+				    echo "Build is Successful"
+			    }
+        }
+
+        stage('Smoke-Test before Deploy')
+        {
+            steps
+			{
+				echo "Test is Starting"
+				sh "mvn test"
+				//echo "Test is Successful"
+			}
+			post{
+			    success{
+			        echo "Test is Successful"
+			    }
+			    failure{
+			         echo "Test failed"
+			    }
+			}
+        }
+        stage('Deploy-check'){
+            steps   {
+                     input  'Everything looks good. Shall we Deploy?'
+                    }
+            post
+            {
+                 aborted
+                 {
+                    echo "Deploy stage has been aborted!"
+                 }
+            }
+        }
+
+        stage('ChecKout-APIRepo-Gitlab')
+        {
+            steps
+            {
+
+                git branch: 'staging',
+                url: '<git ssh url>'
+            }
+        }
+
+
+
+        stage('Deploy Staging')
+        {
+
+            steps
+			{
+				echo "Deploy is Starting"
+				sh "cd deployment/api/staging && make ver=${env.BUILD_NUMBER} deploy_staging "
+
+
+			}
+			post
+			{
+			    success
+			    {
+			        echo "Deploy is Successful"
+                    				slackSend channel: 'eng-notifications',
+                                    color: 'good',
+                                    message: "Deploy success!",
+                                    teamDomain: 'automatad', tokenCredentialId: 'Slackjenkins'
+			    }
+			}
+        }
+        stage('Smoke-Test after Deploy')
+                {
+                    steps
+        			{
+        			    echo "Waiting for 30 sec"
+        			    sh "sleep 30"
+
+        			    echo "Clonning API test gitLab"
+        			    git branch: 'main',
+                        url: '<ssh git url>'
+
+        				echo "Test after Deployment is Starting"
+        				sh "mvn test"
+        				//echo "Test is Successful"
+        			}
+        			post{
+        			    success{
+        			        echo "Test is Successful after deployment"
+        			    }
+        			    failure{
+        			         echo "Test failed"
+        			    }
+        			}
+                }
+
+    }
+    post
+    {
+
+        success
+        {
+
+            echo "This Job is Successful - Notifications have been sent to Slack"
+            slackSend channel: 'eng-notifications',
+            color: 'good',
+            message: "PipeLine Run Success || *${currentBuild.displayName}:* Job Name: ${env.JOB_NAME} || Build Number: ${env.BUILD_NUMBER}\n More information at: ${env.BUILD_URL}",
+            teamDomain: 'automatad', tokenCredentialId: 'Slackjenkins'
+            echo "Slack message sent"
+
+        }
+        failure
+        {
+            echo 'This Job Failed - Notifications have been sent to Slack'
+            slackSend channel: 'eng-notifications',
+            color: 'danger',
+            message: "PipeLine Run Failed || * ${currentBuild.currentResult}: * Job Name: ${env.JOB_NAME} || Build Number: ${env.BUILD_NUMBER}\n More information at: ${env.BUILD_URL}  ",
+            teamDomain: 'automatad', tokenCredentialId: 'Slackjenkins'
+            echo "Slack message sent"
+
+        }
+        aborted
+        {
+                    echo 'Job Aborted - Notifications have been sent to Slack'
+                    slackSend channel: 'eng-notifications',
+                    color: 'danger',
+                    message: "PipeLine Run Aborted || * ${currentBuild.currentResult}: * Job Name: ${env.JOB_NAME} || Build Number: ${env.BUILD_NUMBER}\n More information at: ${env.BUILD_URL}  ",
+                    teamDomain: 'automatad', tokenCredentialId: 'Slackjenkins'
+                    echo "Slack message sent"
+
+        }
+
+
+    }
+
+
+}
